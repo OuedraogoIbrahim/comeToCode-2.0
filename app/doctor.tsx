@@ -6,9 +6,8 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
-  ActivityIndicator,
 } from "react-native";
-import { Camera, CameraView } from "expo-camera";
+import { Camera } from "expo-camera";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Feather } from "@expo/vector-icons";
 import QRCode from "react-native-qrcode-svg";
@@ -21,42 +20,16 @@ const Colors = {
   secondary: "#e0e0e0",
 };
 
-// Typage TypeScript
-interface Consultation {
-  date: string;
-  description: string;
-  doctor: string;
-  workplace: string;
-}
-
-interface Prescription {
-  date: string;
-  medication: string;
-  dosage: string;
-  doctor: string;
-  workplace: string;
-}
-
-interface Antecedent {
-  antecedent: string;
-}
-
-interface MedicalData {
-  consultations: Consultation[];
-  prescriptions: Prescription[];
-  antecedents: string[];
-}
-
 // Simuler un serveur
-const simulateServerSync = async (
-  data: MedicalData
-): Promise<{ success: boolean }> => {
+const simulateServerSync = async (data) => {
   console.log("Synchronisation avec le serveur :", data);
   return { success: true };
 };
 
 // Données fictives
-const dummyMedicalData: MedicalData = {
+const dummyMedicalData = {
+  name: "Jean Dupont",
+  dob: "15/03/1985",
   consultations: [
     {
       date: "10/01/2025",
@@ -97,14 +70,14 @@ const dummyMedicalData: MedicalData = {
 };
 
 export default function Carnet() {
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-  const [scanned, setScanned] = useState<boolean>(false);
-  const [medicalData, setMedicalData] = useState<MedicalData | null>(null);
-  const [showQR, setShowQR] = useState<boolean>(false);
-  const [link, setLink] = useState<string>("");
-  const [pendingSync, setPendingSync] = useState<MedicalData[]>([]);
-  const [cameraActive, setCameraActive] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<string>("Consultations");
+  const [hasPermission, setHasPermission] = useState(null);
+  const [scanned, setScanned] = useState(false);
+  const [medicalData, setMedicalData] = useState(null);
+  const [showQR, setShowQR] = useState(false);
+  const [link, setLink] = useState("");
+  const [pendingSync, setPendingSync] = useState([]);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [activeTab, setActiveTab] = useState("Consultations");
 
   // Demander la permission pour la caméra
   useEffect(() => {
@@ -131,7 +104,6 @@ export default function Carnet() {
         const storedPending = await AsyncStorage.getItem("pendingSync");
         if (storedPending) setPendingSync(JSON.parse(storedPending));
       } catch (error) {
-        console.log(error);
         Alert.alert("Erreur", "Impossible de charger les données.");
       }
     };
@@ -149,11 +121,11 @@ export default function Carnet() {
   }, [pendingSync]);
 
   // Gérer le scan du QR code
-  const handleBarCodeScanned = async ({ data }: { data: string }) => {
+  const handleBarCodeScanned = async ({ data }) => {
     setScanned(true);
     setCameraActive(false);
     try {
-      const newData: MedicalData = JSON.parse(data);
+      const newData = JSON.parse(data);
       const updatedData = medicalData
         ? {
             ...medicalData,
@@ -219,22 +191,20 @@ export default function Carnet() {
   };
 
   // Grouper par date
-  const groupByDate = <T extends Consultation | Prescription>(
-    items: T[]
-  ): { [key: string]: T[] } => {
+  const groupByDate = (items) => {
     return items.reduce((acc, item) => {
       const date = item.date;
       if (!acc[date]) acc[date] = [];
       acc[date].push(item);
       return acc;
-    }, {} as { [key: string]: T[] });
+    }, {});
   };
 
   // Vérifier la permission de la caméra
   if (hasPermission === null) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.text}>Demande de permission en cours...</Text>
       </View>
     );
   }
@@ -248,6 +218,10 @@ export default function Carnet() {
 
   return (
     <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerText}>Dossier Médical</Text>
+      </View>
+
       {/* Tabs */}
       <View
         style={{
@@ -293,27 +267,16 @@ export default function Carnet() {
       {/* Scanner QR code */}
       {cameraActive && !showQR && (
         <View style={styles.cameraContainer}>
-          <CameraView
+          <Camera
             style={styles.camera}
-            // onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
-            barcodeScannerSettings={{
-              barcodeTypes: ["qr"],
+            onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
+            barCodeScannerSettings={{
+              barCodeTypes: ["qr"],
             }}
           />
           <Text style={styles.instructionText}>
             Scannez le QR code du médecin pour mettre à jour votre dossier
           </Text>
-          {!scanned && (
-            <TouchableOpacity
-              style={styles.button}
-              onPress={() => {
-                setScanned(false);
-                setCameraActive(false);
-              }}
-            >
-              <Text style={styles.buttonText}>Retour</Text>
-            </TouchableOpacity>
-          )}
           {scanned && (
             <TouchableOpacity
               style={styles.button}
@@ -331,6 +294,12 @@ export default function Carnet() {
       {/* Afficher les données médicales */}
       {medicalData && !showQR && !cameraActive && (
         <View style={styles.dataContainer}>
+          <Text style={styles.dataTitle}>Informations Médicales</Text>
+          <Text style={styles.dataText}>Nom: {medicalData.name || "N/A"}</Text>
+          <Text style={styles.dataText}>
+            Date de naissance: {medicalData.dob || "N/A"}
+          </Text>
+
           {activeTab === "Consultations" && (
             <>
               <Text style={styles.dataTitle}>Consultations</Text>
@@ -456,6 +425,39 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white,
     padding: 20,
+  },
+  header: {
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  headerText: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: Colors.black,
+  },
+  tabContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginBottom: 20,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    backgroundColor: Colors.secondary,
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
+  },
+  activeTab: {
+    borderBottomColor: Colors.primary,
+  },
+  tabText: {
+    fontSize: 16,
+    color: Colors.black,
+  },
+  activeTabText: {
+    color: Colors.primary,
+    fontWeight: "bold",
   },
   cameraContainer: {
     alignItems: "center",
