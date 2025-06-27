@@ -118,7 +118,9 @@ export default function Carnet() {
   useEffect(() => {
     const loadData = async () => {
       try {
+        // await AsyncStorage.removeItem("medicalData");
         const storedData = await AsyncStorage.getItem("medicalData");
+
         if (!storedData) {
           await AsyncStorage.setItem(
             "medicalData",
