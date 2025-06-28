@@ -19,7 +19,7 @@ const HomeScreen = () => {
       {/* En-tête avec le nom de l'app */}
       <Button title="Go to Doctor" onPress={() => router.push("/doctor")} />
       <View style={styles.header}>
-        <Text style={styles.appName}>SanbaCare</Text>
+        <Text style={styles.appName}>Yafa Santé</Text>
         <Text style={styles.tagline}>Votre santé, notre priorité</Text>
       </View>
 
@@ -36,9 +36,9 @@ const HomeScreen = () => {
             color="#1A3C34"
             style={styles.moduleIcon}
           />
-          <Text style={styles.moduleTitle}>Dossier Médical</Text>
+          <Text style={styles.moduleTitle}>Carnet Médical</Text>
           <Text style={styles.moduleDescription}>
-            Accédez à votre historique médical via QR code.
+            Accédez à votre historique médical.
           </Text>
         </TouchableOpacity>
 

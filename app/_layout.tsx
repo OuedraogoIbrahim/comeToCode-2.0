@@ -11,6 +11,20 @@ export default function RootLayout() {
         }}
       />
       <Stack.Screen
+        name="doctor"
+        options={{
+          headerShown: true,
+          title: "Espace médecin",
+        }}
+      />
+      <Stack.Screen
+        name="add"
+        options={{
+          headerShown: true,
+          title: "Ajouter",
+        }}
+      />
+      <Stack.Screen
         name="(tabs)"
         options={{
           headerShown: false,

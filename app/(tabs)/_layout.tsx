@@ -110,7 +110,7 @@ export default function TabLayout() {
         headerStyle: {
           backgroundColor: "#f8f8f8",
         },
-        headerTitle: "SanbaCare",
+        headerTitle: "Yafa Santé",
         headerTitleAlign: "center",
         headerLeft: () => (
           <TouchableOpacity

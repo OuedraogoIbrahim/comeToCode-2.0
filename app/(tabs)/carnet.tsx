@@ -1,27 +1,45 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   ScrollView,
+  Dimensions,
   ActivityIndicator,
+  Alert,
 } from "react-native";
-import { Camera, CameraView } from "expo-camera";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import { Feather } from "@expo/vector-icons";
 import QRCode from "react-native-qrcode-svg";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 
+const { width } = Dimensions.get("window");
+
+// Modern color palette
 const Colors = {
+  primary: "#2E86AB",
+  primaryLight: "#5AB9EA",
   white: "#FFFFFF",
-  black: "#000000",
-  primary: "#34acb4",
-  secondary: "#e0e0e0",
+  black: "#1A1A1A",
+  gray: "#6C757D",
+  lightGray: "#E9ECEF",
+  background: "#F8F9FA",
+  success: "#28A745",
+  danger: "#DC3545",
 };
 
-// Typage TypeScript
+// Shadow style for cards
+const cardShadow = {
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.1,
+  shadowRadius: 6,
+  elevation: 3,
+};
+
+// TypeScript interfaces
 interface Consultation {
   date: string;
   description: string;
@@ -37,138 +55,160 @@ interface Prescription {
   workplace: string;
 }
 
-interface Antecedent {
-  antecedent: string;
-}
-
 interface MedicalData {
   consultations: Consultation[];
   prescriptions: Prescription[];
   antecedents: string[];
 }
 
-// Simuler un serveur
-const simulateServerSync = async (
-  data: MedicalData
-): Promise<{ success: boolean }> => {
-  console.log("Synchronisation avec le serveur :", data);
-  return { success: true };
-};
-
-// Données fictives
-const dummyMedicalData: MedicalData = {
-  consultations: [
-    {
-      date: "10/01/2025",
-      description: "Consultation générale, contrôle annuel",
-      doctor: "Dr. Marie Leclerc",
-      workplace: "Hôpital Saint-Joseph",
-    },
-    {
-      date: "10/01/2025",
-      description: "Examen ophtalmologique",
-      doctor: "Dr. Paul Martin",
-      workplace: "Clinique des Yeux",
-    },
-    {
-      date: "05/06/2024",
-      description: "Suivi pour hypertension",
-      doctor: "Dr. Sophie Durand",
-      workplace: "Centre Médical Nord",
-    },
-  ],
-  prescriptions: [
-    {
-      date: "10/01/2025",
-      medication: "Paracétamol",
-      dosage: "500mg, 3x/jour",
-      doctor: "Dr. Marie Leclerc",
-      workplace: "Hôpital Saint-Joseph",
-    },
-    {
-      date: "05/06/2024",
-      medication: "Amoxicilline",
-      dosage: "1000mg, 2x/jour",
-      doctor: "Dr. Sophie Durand",
-      workplace: "Centre Médical Nord",
-    },
-  ],
-  antecedents: ["Diabète type 2", "Allergie à la pénicilline"],
-};
-
 export default function Carnet() {
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-  const [scanned, setScanned] = useState<boolean>(false);
+  const [permission, requestPermission] = useCameraPermissions();
   const [medicalData, setMedicalData] = useState<MedicalData | null>(null);
-  const [showQR, setShowQR] = useState<boolean>(false);
-  const [link, setLink] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<
+    "Consultations" | "Prescriptions" | "Antécédents"
+  >("Consultations");
+  const [showQR, setShowQR] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [link, setLink] = useState("");
   const [pendingSync, setPendingSync] = useState<MedicalData[]>([]);
-  const [cameraActive, setCameraActive] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<string>("Consultations");
+  const [isLoading, setIsLoading] = useState(true);
+  const [scanSuccess, setScanSuccess] = useState(false);
 
-  // Demander la permission pour la caméra
-  useEffect(() => {
-    (async () => {
-      const { status } = await Camera.requestCameraPermissionsAsync();
-      setHasPermission(status === "granted");
-    })();
-  }, []);
-
-  // Charger les données médicales
+  // Load data on mount
   useEffect(() => {
     const loadData = async () => {
       try {
-        // await AsyncStorage.removeItem("medicalData");
         const storedData = await AsyncStorage.getItem("medicalData");
-
-        if (!storedData) {
-          await AsyncStorage.setItem(
-            "medicalData",
-            JSON.stringify(dummyMedicalData)
-          );
-          setMedicalData(dummyMedicalData);
-        } else {
-          setMedicalData(JSON.parse(storedData));
-        }
         const storedPending = await AsyncStorage.getItem("pendingSync");
-        if (storedPending) setPendingSync(JSON.parse(storedPending));
+
+        if (storedData) {
+          setMedicalData(JSON.parse(storedData));
+        } else {
+          // Initialize with demo data if none exists
+          const demoData: MedicalData = {
+            consultations: [
+              {
+                date: "10/01/2025",
+                description: "Consultation générale, contrôle annuel",
+                doctor: "Dr. Marie Leclerc",
+                workplace: "Hôpital Saint-Joseph",
+              },
+              {
+                date: "10/01/2025",
+                description: "Examen ophtalmologique",
+                doctor: "Dr. Paul Martin",
+                workplace: "Clinique des Yeux",
+              },
+              {
+                date: "05/06/2024",
+                description: "Suivi pour hypertension",
+                doctor: "Dr. Sophie Durand",
+                workplace: "Centre Médical Nord",
+              },
+            ],
+            prescriptions: [
+              {
+                date: "10/01/2025",
+                medication: "Paracétamol",
+                dosage: "500mg, 3x/jour",
+                doctor: "Dr. Marie Leclerc",
+                workplace: "Hôpital Saint-Joseph",
+              },
+              {
+                date: "05/06/2024",
+                medication: "Amoxicilline",
+                dosage: "1000mg, 2x/jour",
+                doctor: "Dr. Sophie Durand",
+                workplace: "Centre Médical Nord",
+              },
+            ],
+            antecedents: ["Diabète type 2", "Allergie à la pénicilline"],
+          };
+          await AsyncStorage.setItem("medicalData", JSON.stringify(demoData));
+          setMedicalData(demoData);
+        }
+
+        if (storedPending) {
+          setPendingSync(JSON.parse(storedPending));
+        }
       } catch (error) {
-        console.log(error);
-        Alert.alert("Erreur", "Impossible de charger les données.");
+        Alert.alert("Erreur", "Impossible de charger les données");
+      } finally {
+        setIsLoading(false);
       }
     };
+
     loadData();
   }, []);
 
-  // Synchronisation avec connexion réseau
+  // Handle network connectivity for sync
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
       if (state.isConnected && pendingSync.length > 0) {
-        syncPendingData();
+        syncData();
       }
     });
     return () => unsubscribe();
   }, [pendingSync]);
 
-  // Gérer le scan du QR code
-  const handleBarCodeScanned = async ({ data }: { data: string }) => {
-    setScanned(true);
-    setCameraActive(false);
+  const syncData = async () => {
     try {
-      const newData: MedicalData = JSON.parse(data);
+      // Simulate server sync
+      await Promise.all(
+        pendingSync.map((data) => {
+          console.log("Syncing data:", data);
+          return new Promise((resolve) => setTimeout(resolve, 1000));
+        })
+      );
+
+      setPendingSync([]);
+      await AsyncStorage.removeItem("pendingSync");
+      Alert.alert("Succès", "Données synchronisées");
+    } catch (error) {
+      Alert.alert("Erreur", "Échec de la synchronisation");
+    }
+  };
+
+  const handleBarCodeScanned = async ({ data }: { data: string }) => {
+    try {
+      // Vérifier si c'est un QR code valide de notre application
+      if (!data.startsWith("sanbacare://medical/")) {
+        Alert.alert(
+          "Erreur",
+          "Ce n'est pas un QR code valide pour cette application"
+        );
+        return;
+      }
+
+      const jsonData = data.replace("sanbacare://medical/", "");
+      const newData: MedicalData = JSON.parse(jsonData);
+
+      // Vérifier que les données ont la bonne structure
+      if (
+        !newData.consultations &&
+        !newData.prescriptions &&
+        !newData.antecedents
+      ) {
+        Alert.alert("Erreur", "Format de données invalide");
+        return;
+      }
+
+      // Afficher l'icône de succès
+      setScanSuccess(true);
+
+      // Fusionner avec les données existantes
       const updatedData = medicalData
         ? {
-            ...medicalData,
             consultations: [
-              ...(medicalData.consultations || []),
+              ...medicalData.consultations,
               ...(newData.consultations || []),
             ],
             prescriptions: [
-              ...(medicalData.prescriptions || []),
+              ...medicalData.prescriptions,
               ...(newData.prescriptions || []),
             ],
             antecedents: [
-              ...(medicalData.antecedents || []),
+              ...medicalData.antecedents,
               ...(newData.antecedents || []),
             ],
           }
@@ -177,356 +217,573 @@ export default function Carnet() {
       setMedicalData(updatedData);
       await AsyncStorage.setItem("medicalData", JSON.stringify(updatedData));
 
+      // Ajouter aux données en attente de sync
       const newPending = [...pendingSync, newData];
       setPendingSync(newPending);
       await AsyncStorage.setItem("pendingSync", JSON.stringify(newPending));
 
-      Alert.alert("Succès", "Dossier médical mis à jour !");
+      // Fermer la caméra après 1.5 secondes
+      setTimeout(() => {
+        setIsScanning(false);
+        setScanSuccess(false);
+        Alert.alert("Succès", "Votre carnet a été mis à jour");
+      }, 1500);
     } catch (error) {
-      Alert.alert("Erreur", "QR code invalide ou données corrompues.");
+      Alert.alert("Erreur", "QR code invalide ou données corrompues");
     }
   };
 
-  // Générer un lien pour le QR code
-  const generateLink = () => {
-    const uniqueLink = `sanbacare://medical/${JSON.stringify(medicalData)}`;
-    setLink(uniqueLink);
+  const generateQRCode = () => {
+    if (!medicalData) return;
+    const qrData = `sanbacare://medical/${JSON.stringify(medicalData)}`;
+    setLink(qrData);
     setShowQR(true);
   };
 
-  // Synchroniser les données en attente
-  const syncPendingData = async () => {
-    try {
-      for (const data of pendingSync) {
-        const response = await simulateServerSync(data);
-        if (response.success) {
-          const newPending = pendingSync.filter((item) => item !== data);
-          setPendingSync(newPending);
-          await AsyncStorage.setItem("pendingSync", JSON.stringify(newPending));
-        }
-      }
-      if (pendingSync.length > 0) {
-        Alert.alert("Succès", "Données synchronisées avec le serveur !");
-      }
-    } catch (error) {
-      Alert.alert("Erreur", "Échec de la synchronisation.");
-    }
-  };
-
-  // Activer la caméra
-  const activateCamera = () => {
-    setCameraActive(true);
-    setScanned(false);
-    setShowQR(false);
-  };
-
-  // Grouper par date
-  const groupByDate = <T extends Consultation | Prescription>(
-    items: T[]
-  ): { [key: string]: T[] } => {
+  const groupByDate = <T extends Consultation | Prescription>(items: T[]) => {
     return items.reduce((acc, item) => {
       const date = item.date;
       if (!acc[date]) acc[date] = [];
       acc[date].push(item);
       return acc;
-    }, {} as { [key: string]: T[] });
+    }, {} as Record<string, T[]>);
   };
 
-  // Vérifier la permission de la caméra
-  if (hasPermission === null) {
+  if (!permission) {
     return (
-      <View style={styles.container}>
+      <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
-  if (hasPermission === false) {
+
+  if (!permission.granted) {
     return (
-      <View style={styles.container}>
-        <Text>Accès à la caméra requis pour scanner les QR codes.</Text>
+      <View style={styles.permissionContainer}>
+        <Text style={styles.permissionText}>
+          Accès à la caméra est nécessaire pour scanner les QR codes
+        </Text>
+        <TouchableOpacity
+          style={styles.primaryButton}
+          onPress={requestPermission}
+        >
+          <Text style={styles.buttonText}>Autoriser la caméra</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container}>
-      {/* Tabs */}
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-around",
-          marginBottom: 20,
-        }}
-      >
-        {["Consultations", "Prescriptions", "Antécédents"].map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={{
-              flex: 1,
-              paddingVertical: 10,
-              alignItems: "center",
-              borderRadius: activeTab === tab ? 10 : 0,
-              backgroundColor:
-                activeTab === tab ? Colors.primary : "transparent",
-            }}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text
-              style={{
-                fontSize: 16,
-                color: activeTab === tab ? Colors.white : Colors.black,
-                fontWeight: activeTab === tab ? "bold" : "normal",
-              }}
-            >
-              {tab}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+    <View style={styles.container}>
+      {/* Header */}
+      {/* <View style={styles.header}>
+        <Text style={styles.headerTitle}>Carnet de Santé</Text>
+      </View> */}
 
-      {/* Bouton pour activer la caméra */}
-      {!cameraActive && !showQR && (
-        <TouchableOpacity style={styles.button} onPress={activateCamera}>
-          <Feather name="camera" size={24} color={Colors.white} />
-          <Text style={styles.buttonText}>Scanner un QR code</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Scanner QR code */}
-      {cameraActive && !showQR && (
+      {/* Main Content */}
+      {isScanning ? (
         <View style={styles.cameraContainer}>
           <CameraView
             style={styles.camera}
-            // onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
-            barcodeScannerSettings={{
-              barcodeTypes: ["qr"],
-            }}
-          />
-          <Text style={styles.instructionText}>
-            Scannez le QR code du médecin pour mettre à jour votre dossier
-          </Text>
-          {!scanned && (
-            <TouchableOpacity
-              style={styles.button}
-              onPress={() => {
-                setScanned(false);
-                setCameraActive(false);
-              }}
-            >
-              <Text style={styles.buttonText}>Retour</Text>
-            </TouchableOpacity>
-          )}
-          {scanned && (
-            <TouchableOpacity
-              style={styles.button}
-              onPress={() => {
-                setScanned(false);
-                setCameraActive(false);
-              }}
-            >
-              <Text style={styles.buttonText}>Retour</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
+            onBarcodeScanned={scanSuccess ? undefined : handleBarCodeScanned}
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+          >
+            <View style={styles.cameraOverlay}>
+              <View style={styles.scanFrame} />
+              <Text style={styles.scanText}>Scanner le QR code du médecin</Text>
 
-      {/* Afficher les données médicales */}
-      {medicalData && !showQR && !cameraActive && (
-        <View style={styles.dataContainer}>
-          {activeTab === "Consultations" && (
-            <>
-              <Text style={styles.dataTitle}>Consultations</Text>
-              {medicalData.consultations?.length > 0 ? (
-                Object.entries(groupByDate(medicalData.consultations)).map(
-                  ([date, items]) => (
-                    <View key={date} style={styles.groupContainer}>
-                      <Text style={styles.groupDate}>{date}</Text>
-                      {items.map((consult, index) => (
-                        <View key={index} style={styles.itemContainer}>
-                          <Text style={styles.dataText}>
-                            {consult.description}
-                          </Text>
-                          <Text style={styles.subText}>
-                            Par: {consult.doctor} ({consult.workplace})
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  )
-                )
-              ) : (
-                <Text style={styles.dataText}>
-                  Aucune consultation enregistrée
-                </Text>
-              )}
-            </>
-          )}
-
-          {activeTab === "Prescriptions" && (
-            <>
-              <Text style={styles.dataTitle}>Prescriptions</Text>
-              {medicalData.prescriptions?.length > 0 ? (
-                Object.entries(groupByDate(medicalData.prescriptions)).map(
-                  ([date, items]) => (
-                    <View key={date} style={styles.groupContainer}>
-                      <Text style={styles.groupDate}>{date}</Text>
-                      {items.map((presc, index) => (
-                        <View key={index} style={styles.itemContainer}>
-                          <Text style={styles.dataText}>
-                            {presc.medication} ({presc.dosage})
-                          </Text>
-                          <Text style={styles.subText}>
-                            Par: {presc.doctor} ({presc.workplace})
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  )
-                )
-              ) : (
-                <Text style={styles.dataText}>
-                  Aucune prescription enregistrée
-                </Text>
-              )}
-            </>
-          )}
-
-          {activeTab === "Antécédents" && (
-            <>
-              <Text style={styles.dataTitle}>Antécédents</Text>
-              {medicalData.antecedents?.length > 0 ? (
-                medicalData.antecedents.map((ant, index) => (
-                  <Text key={index} style={styles.dataText}>
-                    {ant}
+              {/* Overlay de succès */}
+              {scanSuccess && (
+                <View style={styles.successOverlay}>
+                  <Feather
+                    name="check-circle"
+                    size={80}
+                    color={Colors.success}
+                  />
+                  <Text style={styles.successText}>
+                    Données ajoutées avec succès
                   </Text>
-                ))
-              ) : (
-                <Text style={styles.dataText}>Aucun antécédent enregistré</Text>
+                </View>
               )}
-            </>
-          )}
+            </View>
+          </CameraView>
 
-          <TouchableOpacity style={styles.button} onPress={generateLink}>
-            <Feather name="share" size={24} color={Colors.white} />
-            <Text style={styles.buttonText}>
-              Afficher le QR code du dossier
-            </Text>
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={() => {
+              setIsScanning(false);
+              setScanSuccess(false);
+            }}
+          >
+            <Text style={styles.cancelText}>Annuler</Text>
           </TouchableOpacity>
         </View>
-      )}
-
-      {/* Afficher le QR code */}
-      {showQR && link && (
+      ) : showQR ? (
         <View style={styles.qrContainer}>
-          <QRCode
-            value={link}
-            size={200}
-            color={Colors.black}
-            backgroundColor={Colors.white}
-          />
-          <Text style={styles.instructionText}>
-            Montrez ce QR code au médecin pour partager votre dossier
+          <View style={[styles.qrCard, cardShadow]}>
+            <QRCode
+              value={link}
+              size={width * 0.7}
+              color={Colors.primary}
+              backgroundColor={Colors.white}
+            />
+          </View>
+          <Text style={styles.qrInstruction}>
+            Présentez ce code à votre médecin
           </Text>
           <TouchableOpacity
-            style={styles.button}
+            style={styles.primaryButton}
             onPress={() => setShowQR(false)}
           >
-            <Text style={styles.buttonText}>Retour aux données</Text>
+            <Text style={styles.buttonText}>Retour</Text>
           </TouchableOpacity>
         </View>
-      )}
+      ) : (
+        <>
+          {/* Tabs */}
+          <View style={styles.tabContainer}>
+            {(["Consultations", "Prescriptions", "Antécédents"] as const).map(
+              (tab) => (
+                <TouchableOpacity
+                  key={tab}
+                  style={[
+                    styles.tabButton,
+                    activeTab === tab && styles.activeTabButton,
+                  ]}
+                  onPress={() => setActiveTab(tab)}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      activeTab === tab && styles.activeTabText,
+                    ]}
+                  >
+                    {tab}
+                  </Text>
+                </TouchableOpacity>
+              )
+            )}
+          </View>
 
-      {/* Message si aucune donnée */}
-      {!medicalData && !showQR && !cameraActive && scanned && (
-        <View style={styles.dataContainer}>
-          <Text style={styles.dataText}>
-            Aucune donnée médicale disponible. Veuillez scanner un QR code.
-          </Text>
-          <TouchableOpacity style={styles.button} onPress={generateLink}>
-            <Text style={styles.buttonText}>
-              Générer un QR code pour le médecin
-            </Text>
-          </TouchableOpacity>
-        </View>
+          {/* Data Content */}
+          <ScrollView style={styles.contentContainer}>
+            {activeTab === "Consultations" && (
+              <DataSection
+                title="Consultations"
+                items={medicalData?.consultations || []}
+                emptyText="Aucune consultation enregistrée"
+                renderItem={(item) => (
+                  <>
+                    <Text style={styles.itemTitle}>{item.description}</Text>
+                    <View style={styles.itemMeta}>
+                      <Feather name="user" size={14} color={Colors.primary} />
+                      <Text style={styles.itemText}>{item.doctor}</Text>
+                      <Feather
+                        name="map-pin"
+                        size={14}
+                        color={Colors.primary}
+                      />
+                      <Text style={styles.itemText}>{item.workplace}</Text>
+                    </View>
+                  </>
+                )}
+              />
+            )}
+
+            {activeTab === "Prescriptions" && (
+              <DataSection
+                title="Prescriptions"
+                items={medicalData?.prescriptions || []}
+                emptyText="Aucune prescription enregistrée"
+                renderItem={(item) => (
+                  <>
+                    <View style={styles.medicationRow}>
+                      <Feather
+                        name="activity"
+                        size={16}
+                        color={Colors.primary}
+                      />
+                      <Text style={styles.medicationName}>
+                        {item.medication}
+                      </Text>
+                      <Text style={styles.medicationDosage}>{item.dosage}</Text>
+                    </View>
+                    <View style={styles.itemMeta}>
+                      <Feather name="user" size={14} color={Colors.primary} />
+                      <Text style={styles.itemText}>{item.doctor}</Text>
+                      <Feather
+                        name="calendar"
+                        size={14}
+                        color={Colors.primary}
+                      />
+                      <Text style={styles.itemText}>{item.date}</Text>
+                    </View>
+                  </>
+                )}
+              />
+            )}
+
+            {activeTab === "Antécédents" && (
+              <DataSection
+                title="Antécédents médicaux"
+                items={medicalData?.antecedents || []}
+                isEmpty={true}
+                emptyText="Aucun antécédent enregistré"
+                renderItem={(item) => (
+                  <View style={styles.antecedentItem}>
+                    <View style={styles.bulletPoint} />
+                    <Text style={styles.antecedentText}>{item}</Text>
+                  </View>
+                )}
+              />
+            )}
+          </ScrollView>
+
+          {/* Action Buttons */}
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => setIsScanning(true)}
+            >
+              <Feather name="camera" size={20} color={Colors.white} />
+              <Text style={styles.buttonText}>Scanner QR Code</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={generateQRCode}
+            >
+              <Feather name="share-2" size={20} color={Colors.white} />
+              <Text style={styles.buttonText}>Partager mon dossier</Text>
+            </TouchableOpacity>
+          </View>
+        </>
       )}
-    </ScrollView>
+    </View>
   );
 }
+
+// Reusable Data Section Component
+const DataSection = ({
+  title,
+  items,
+  emptyText,
+  isEmpty = false,
+  renderItem,
+}: {
+  title: string;
+  items: any[];
+  emptyText: string;
+  isEmpty?: boolean;
+  renderItem: (item: any) => React.ReactNode;
+}) => {
+  const groupedItems = groupByDate(items);
+
+  return (
+    <View style={styles.sectionContainer}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+
+      {items.length > 0 ? (
+        Object.entries(groupedItems).map(([date, dateItems]) => (
+          <View key={date} style={styles.dateGroup}>
+            <Text style={styles.dateTitle}>{isEmpty ? "" : date}</Text>
+            {dateItems.map((item: any, index: number) => (
+              <View key={index} style={[styles.dataCard, cardShadow]}>
+                {renderItem(item)}
+              </View>
+            ))}
+          </View>
+        ))
+      ) : (
+        <View style={styles.emptyState}>
+          <Feather name="info" size={24} color={Colors.gray} />
+          <Text style={styles.emptyText}>{emptyText}</Text>
+        </View>
+      )}
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  permissionContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
     padding: 20,
   },
-  cameraContainer: {
-    alignItems: "center",
+  permissionText: {
+    fontSize: 18,
+    textAlign: "center",
     marginBottom: 20,
-  },
-  camera: {
-    width: 300,
-    height: 300,
-    borderRadius: 10,
-  },
-  instructionText: {
-    fontSize: 16,
     color: Colors.black,
-    marginVertical: 10,
+  },
+  header: {
+    padding: 20,
+    paddingTop: 50,
+    backgroundColor: Colors.primary,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    ...cardShadow,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: "600",
+    color: Colors.white,
     textAlign: "center",
   },
-  button: {
+  tabContainer: {
+    flexDirection: "row",
+    marginHorizontal: 20,
+    marginTop: 20,
+    backgroundColor: Colors.lightGray,
+    borderRadius: 10,
+    padding: 5,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderRadius: 8,
+  },
+  activeTabButton: {
+    backgroundColor: Colors.white,
+    ...cardShadow,
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: Colors.gray,
+  },
+  activeTabText: {
+    color: Colors.primary,
+    fontWeight: "600",
+  },
+  contentContainer: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  cameraContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  camera: {
+    width: width * 0.9,
+    height: width * 0.9,
+    borderRadius: 20,
+    overflow: "hidden",
+  },
+  cameraOverlay: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  scanFrame: {
+    width: width * 0.7,
+    height: width * 0.7,
+    borderWidth: 2,
+    borderColor: Colors.white,
+    borderRadius: 20,
+  },
+  scanText: {
+    color: Colors.white,
+    fontSize: 18,
+    marginTop: 20,
+    fontWeight: "500",
+  },
+  cancelButton: {
+    position: "absolute",
+    bottom: 40,
+    backgroundColor: Colors.white,
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    ...cardShadow,
+  },
+  cancelText: {
+    color: Colors.primary,
+    fontWeight: "500",
+  },
+  qrContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  qrCard: {
+    backgroundColor: Colors.white,
+    padding: 20,
+    borderRadius: 20,
+    marginBottom: 20,
+  },
+  qrInstruction: {
+    fontSize: 16,
+    color: Colors.black,
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  sectionContainer: {
+    marginBottom: 30,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: Colors.primary,
+    marginBottom: 15,
+  },
+  dateGroup: {
+    marginBottom: 20,
+  },
+  dateTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: Colors.black,
+    marginBottom: 10,
+  },
+  dataCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 12,
+  },
+  itemTitle: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: Colors.black,
+    marginBottom: 8,
+  },
+  itemMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    marginTop: 5,
+  },
+  itemText: {
+    fontSize: 14,
+    color: Colors.gray,
+    marginRight: 15,
+    marginLeft: 5,
+  },
+  medicationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  medicationName: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: Colors.black,
+    marginLeft: 8,
+  },
+  medicationDosage: {
+    fontSize: 14,
+    color: Colors.gray,
+    marginLeft: 8,
+  },
+  antecedentItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  bulletPoint: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.primary,
+    marginRight: 10,
+  },
+  antecedentText: {
+    fontSize: 15,
+    color: Colors.black,
+  },
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 30,
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    ...cardShadow,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: Colors.gray,
+    marginTop: 15,
+    textAlign: "center",
+  },
+  actionButtons: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  primaryButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: Colors.primary,
-    padding: 10,
-    borderRadius: 5,
-    marginTop: 10,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 15,
+    ...cardShadow,
+  },
+  secondaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.gray,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 15,
+    ...cardShadow,
   },
   buttonText: {
+    fontSize: 16,
+    fontWeight: "500",
     color: Colors.white,
-    fontSize: 16,
-    textAlign: "center",
     marginLeft: 10,
   },
-  dataContainer: {
-    backgroundColor: "#f8f8f8",
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 20,
+  successOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  dataTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: Colors.black,
-    marginBottom: 10,
-    marginTop: 10,
-  },
-  dataText: {
-    fontSize: 16,
-    color: Colors.black,
-    marginBottom: 5,
-  },
-  subText: {
-    fontSize: 14,
-    color: Colors.black,
-    marginBottom: 10,
-    marginLeft: 10,
-  },
-  groupContainer: {
-    marginBottom: 15,
-  },
-  groupDate: {
+  successText: {
+    marginTop: 20,
     fontSize: 18,
     fontWeight: "600",
-    color: Colors.black,
-    marginBottom: 5,
-  },
-  itemContainer: {
-    paddingLeft: 10,
-  },
-  qrContainer: {
-    alignItems: "center",
-    marginBottom: 20,
+    color: Colors.success,
+    textAlign: "center",
   },
 });
+
+// Helper function to group by date
+function groupByDate<T extends { date: string }>(
+  items: T[]
+): Record<string, T[]> {
+  return items.reduce((acc, item) => {
+    const date = item.date;
+    if (!acc[date]) acc[date] = [];
+    acc[date].push(item);
+    return acc;
+  }, {} as Record<string, T[]>);
+}
