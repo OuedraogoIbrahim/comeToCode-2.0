@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
+  Button,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
@@ -16,6 +17,7 @@ const HomeScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       {/* En-tête avec le nom de l'app */}
+      <Button title="Go to Doctor" onPress={() => router.push("/doctor")} />
       <View style={styles.header}>
         <Text style={styles.appName}>SanbaCare</Text>
         <Text style={styles.tagline}>Votre santé, notre priorité</Text>
